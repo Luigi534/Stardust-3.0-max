@@ -329,6 +329,31 @@ namespace Bot
         }
 
         /// <summary>
+        /// A dribbling opponent always "wins" the race to the ball, so a race-based gate never challenges it and the
+        /// defender shadows all the way into its own goal. Once a controlled carrier is inside the danger zone and
+        /// we are goal-side and close, contest the ball: a 50/50 near our goal beats giving a free shot.
+        /// </summary>
+        public static bool ShouldChallengeCarrier(TacticalFrame frame, Car car, Ball ball, Vec3 goal,
+            System.Collections.Generic.IEnumerable<Car> opponents)
+        {
+            if (frame == null || car == null || ball == null || car.IsDemolished || frame.TeamRank != 0 ||
+                !car.IsGrounded || !IsGoalSide(car.Location, ball.location, goal, 10f))
+                return false;
+            if (ball.location.FlatDist(goal) > 3000f || car.Location.Dist(ball.location) > 1600f)
+                return false;
+            foreach (Car opponent in opponents)
+            {
+                if (opponent == null || opponent.IsDemolished)
+                    continue;
+                bool controlled = opponent.Location.Dist(ball.location) < 260f &&
+                    (opponent.Velocity - ball.velocity).Length() < 600f && ball.location.z < 350f;
+                if (controlled)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Hysteresis gate for a challenge that has already been selected. ETA estimates can jump by
         /// several tenths after a touch or prediction resample; do not abandon a committed approach
         /// unless the geometry becomes genuinely unsafe or the race becomes clearly lost.

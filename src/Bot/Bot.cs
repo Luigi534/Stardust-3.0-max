@@ -10,6 +10,8 @@ namespace Bot
         public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
+        public bool CarrierChallenge { get; init; } = Environment.GetEnvironmentVariable("STARDUST_CARRIER_CHALLENGE") != "0";
+        public bool PadRouting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_PAD_ROUTE") != "0";
         public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLE") == "1";
         public bool AerialStrikes { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_STRIKE") != "0";
         public bool AerialBlocks { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_BLOCK") == "1";
@@ -153,7 +155,9 @@ namespace Bot
             nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
 
             RawCanChallenge = Defense.CanChallenge(
-                Situation, Me, Ball.Location, OurGoal.Location);
+                Situation, Me, Ball.Location, OurGoal.Location) ||
+                (Options.CarrierChallenge && Defense.ShouldChallengeCarrier(
+                    Situation, Me, Ball.MainBall, OurGoal.Location, LivingOpponents));
             bool challengeSafe = Defense.CanContinueChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
             if (RawCanChallenge)
@@ -653,6 +657,9 @@ namespace Bot
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
+            if (Options.PadRouting && !holdPosition &&
+                RoutePlanner.PadWaypoint(Me, Field.Boosts, destination, Ball.Location, Team) is Vec3 padWay)
+                destination = padWay;
 
             if (Action is DefensiveDrive guard)
             {
@@ -673,6 +680,9 @@ namespace Bot
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
+            if (Options.PadRouting && speed < Car.MaxSpeed &&
+                RoutePlanner.PadWaypoint(Me, Field.Boosts, destination, Ball.Location, Team) is Vec3 padWay)
+                destination = padWay;
 
             if (Action is Drive drive)
             {
