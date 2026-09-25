@@ -158,6 +158,9 @@ namespace Bot
         private readonly Vec3 ownGoal;
         private readonly Drive windup;
         private Vec3 dodgeDirection;
+        private float lockedTime = float.NaN;
+        /// <summary>Keep the locked contact while it needs less thrust than this.</summary>
+        public const float LockDemand = 1150f;
 
         /// <summary>Upward impulse (along the wall normal) of a held jump + neutral double jump, minus losses.</summary>
         public const float LaunchImpulse = 420f;
@@ -314,9 +317,14 @@ namespace Bot
         private static (Vec3 position, Vec3 velocity) AfterLaunch(Car car) =>
             (car.Location + car.Velocity * 0.15f + car.Up * 40f, car.Velocity + car.Up * LaunchImpulse);
 
+        /// <summary>The same block also launches from the floor in front of our goal (measured: 26 -> 37 of 100 hard shots).</summary>
+        public const bool FromFloor = true;
+
         public static WallRelease TryCreate(Car car, Vec3 ownGoal, float deadline)
         {
-            if (!OnWall(car) || car.Boost < 5f)
+            bool floor = FromFloor && car != null && car.IsGrounded && car.Up.z > 0.9f &&
+                car.Location.FlatDist(ownGoal) < 2500f;
+            if (!(OnWall(car) || floor) || car.Boost < 5f)
                 return null;
             if (LaunchReady(car, ownGoal))
                 return new WallRelease(car, ownGoal, true);
@@ -375,11 +383,31 @@ namespace Bot
                     return;
                 case Phase.Fly:
                 {
-                    var (demand, slice) = BlockDemand(car.Location, car.Velocity, ownGoal, 0f, MaxDemand, car.Forward, 1.2f);
-                    if (slice == null || car.IsGrounded)
+                    if (car.IsGrounded)
                     {
                         Finished = true;
                         return;
+                    }
+                    // Lock the contact time once chosen; re-select only if the locked point becomes unreachable.
+                    BallSlice slice = null;
+                    if (float.IsFinite(lockedTime) && lockedTime > Game.Time + 0.03f &&
+                        Ball.Prediction.TrySample(lockedTime, out Ball locked))
+                    {
+                        float tl = lockedTime - Game.Time;
+                        Vec3 needLocked = (BlockPoint(locked.location, ownGoal) - car.Location - car.Velocity * tl) * (2f / (tl * tl)) - Game.Gravity;
+                        if (needLocked.Length() < LockDemand || tl < 0.2f)
+                            slice = new BallSlice(lockedTime, locked.location, locked.velocity);
+                    }
+                    if (slice == null)
+                    {
+                        var (demand, chosen) = BlockDemand(car.Location, car.Velocity, ownGoal, 0f, MaxDemand, car.Forward, 1.2f);
+                        if (chosen == null)
+                        {
+                            Finished = true;
+                            return;
+                        }
+                        slice = chosen;
+                        lockedTime = chosen.Time;
                     }
                     float t = MathF.Max(0.05f, slice.Time - Game.Time);
                     Vec3 need = (BlockPoint(slice.Location, ownGoal) - car.Location - car.Velocity * t) * (2f / (t * t)) - Game.Gravity;

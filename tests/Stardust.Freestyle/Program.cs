@@ -255,5 +255,36 @@ Test("stiff attitude controller commands the same rotation sense as the default 
     Check(MathF.Abs(stiff.Pitch) >= MathF.Abs(soft.Pitch) - 1e-4f, "stiff controller weaker than default");
 });
 
+Test("spiderman save: block point is goal-side of the ball for both teams", () =>
+{
+    foreach (float gy in new[] { -5120f, 5120f })
+    {
+        Vec3 ball = new Vec3(300, gy * 0.85f, 400);
+        Vec3 block = WallRelease.BlockPoint(ball, new Vec3(0, gy, 0));
+        Check(MathF.Abs(block.y) > MathF.Abs(ball.y), $"block {block} not goal-side of ball {ball}");
+        Check(MathF.Abs(block.x - ball.x) < 1e-3f && MathF.Abs(block.z - ball.z) < 1e-3f, "block moved off the ball's line");
+    }
+});
+
+Test("spiderman save: wind-up never runs past the post into the goal opening", () =>
+{
+    Set(typeof(Ball), nameof(Ball.Prediction), null, new BallPrediction { Slices = new[] { new BallSlice(10.5f, new Vec3(-200, -4500, 400), new Vec3(0, -2000, 0)) } });
+    foreach (float x in new[] { -1600f, -1100f, 1100f, 1600f })
+    {
+        var car = new Car { Location = new Vec3(x, -5103, 600), Forward = Vec3.X, Up = Vec3.Y, IsGrounded = true };
+        Vec3 target = WallRelease.WindupTarget(car);
+        Check(MathF.Abs(target.x) >= Goal.Width * 0.5f, $"wind-up target {target} is inside the posts");
+        Check(MathF.Sign(target.x) == MathF.Sign(x), $"wind-up target {target} crosses the goal");
+    }
+});
+
+Test("spiderman save: wall detection accepts the back wall and rejects the floor", () =>
+{
+    var wall = new Car { Location = new Vec3(1200, -5103, 600), Forward = -Vec3.X, Up = Vec3.Y, IsGrounded = true };
+    var floor = new Car { Location = new Vec3(0, -4800, 17), Forward = Vec3.Y, Up = Vec3.Up, IsGrounded = true };
+    Check(WallRelease.OnWall(wall) && WallRelease.OnBackWall(wall, new Vec3(0, -5120, 0)), "back wall not detected");
+    Check(!WallRelease.OnWall(floor), "floor detected as wall");
+});
+
 Console.WriteLine($"FREESTYLE RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;

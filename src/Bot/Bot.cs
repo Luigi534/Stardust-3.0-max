@@ -167,6 +167,19 @@ namespace Bot
             ChallengeCommitted = RawCanChallenge ||
                 (Game.Time < challengeCommitUntil && challengeSafe);
 
+            // On a wall with a shot coming: the leap-off save takes over from the hang.
+            if (Options.WallGuard && emergency && !(Action is WallRelease) && WallRelease.OnWall(Me) &&
+                (Action is WallGuard hang && !hang.Released))
+            {
+                WallRelease leap = WallRelease.TryCreate(Me, OurGoal.Location, MathF.Max(0.05f, threat - 0.025f));
+                if (leap != null)
+                {
+                    Action = leap;
+                    SetDecision("defend / spiderman save");
+                    return;
+                }
+            }
+
             // Spiderman defence owns the car while it hangs on the back wall or is releasing into a save.
             if (Action is WallGuard spider && !spider.Finished && (spider.OnWall || spider.Released))
             {
@@ -186,7 +199,7 @@ namespace Bot
                 float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
 
                 // Spiderman: from a wall, leap off into the shot rather than driving down to the goal line.
-                if (Options.WallGuard && emergency && WallRelease.OnWall(Me))
+                if (Options.WallGuard && emergency && (WallRelease.OnWall(Me) || WallRelease.FromFloor))
                 {
                     WallRelease wallSave = WallRelease.TryCreate(Me, OurGoal.Location, deadline);
                     if (wallSave != null)
