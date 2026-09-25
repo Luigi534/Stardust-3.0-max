@@ -174,10 +174,29 @@ namespace Bot
                 return;
             }
 
+            if (Action is WallRelease release && !release.Finished)
+            {
+                SetDecision("defend / spiderman save");
+                return;
+            }
+
             if (emergency || counterDanger)
             {
                 float dangerTime = emergency ? threat : counterThreat;
                 float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
+
+                // Spiderman: from a wall, leap off into the shot rather than driving down to the goal line.
+                if (Options.WallGuard && emergency && WallRelease.OnWall(Me))
+                {
+                    WallRelease wallSave = WallRelease.TryCreate(Me, OurGoal.Location, deadline);
+                    if (wallSave != null)
+                    {
+                        Action = wallSave;
+                        defensiveShot = null;
+                        SetDecision("defend / spiderman save");
+                        return;
+                    }
+                }
                 bool clearSide = Defense.IsGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
