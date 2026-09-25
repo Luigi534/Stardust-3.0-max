@@ -327,6 +327,12 @@ namespace Bot
                 return;
             }
 
+            if (Action is UnderBallReset underReset && !underReset.Finished && !(finishNow && !underReset.Committed))
+            {
+                SetDecision(underReset.Confirmed ? "mechanic / flip reset shot" : "mechanic / under-ball reset");
+                return;
+            }
+
             if (Action is AirDribble dribble && !dribble.Finished)
             {
                 SetDecision(dribble.Shooting ? "mechanic / air dribble shot" : "mechanic / air dribble");
@@ -607,6 +613,16 @@ namespace Bot
             if (!Options.FlipResets || !FlipResetPlay.Worthwhile(
                     Situation, Me, Ball.MainBall, OurGoal.Location, EmergencyThreatTime))
                 return false;
+            if (Me.IsGrounded)
+            {
+                // From the floor: the under-ball reset (shadow under the ball, launch on the closing-speed window).
+                UnderBallReset under = UnderBallReset.TryCreate(this);
+                if (under == null || HasTeammateEarlierShot(under.ClaimTime))
+                    return false;
+                Action = under;
+                SetDecision("mechanic / under-ball reset");
+                return true;
+            }
             FlipResetPlay play = FlipResetPlay.TryCreate(this);
             if (play == null || HasTeammateEarlierShot(play.ClaimTime))
                 return false;

@@ -223,5 +223,37 @@ Test("air dribble: keep-up aim lifts the ball and carries it toward the attacked
     }
 });
 
+Test("under-ball reset: launch prediction matches the jump-impulse closing model", () =>
+{
+    // Ball 900 uu above a grounded car, rising at 200 uu/s: closing = impulse - 200, contact after the climb.
+    var (time, height, closing) = UnderBallReset.LaunchPrediction(new Vec3(0, 0, 17), new Vec3(0, 0, 900), new Vec3(0, 0, 200), UnderBallReset.JumpImpulse);
+    Check(MathF.Abs(closing - (UnderBallReset.JumpImpulse - 200f)) < 1e-3f, $"closing {closing}");
+    Check(time > 0.8f && time < 1.4f, $"contact time {time}");
+    Check(height > 600f && height < 1000f, $"contact height {height}");
+    // A faster-rising ball closes more slowly and meets the car later and higher.
+    var later = UnderBallReset.LaunchPrediction(new Vec3(0, 0, 17), new Vec3(0, 0, 900), new Vec3(0, 0, 500), UnderBallReset.JumpImpulse);
+    Check(later.time > time && later.closing < closing, "rising ball should close more slowly");
+});
+
+Test("under-ball reset: goal cone narrows with distance and never goes below the floor", () =>
+{
+    Vec3 goal = new Vec3(0, 5120, 320);
+    float near = UnderBallReset.GoalCone(new Vec3(0, 3500, 500), goal);
+    float far = UnderBallReset.GoalCone(new Vec3(0, -3000, 500), goal);
+    Check(near > far, $"cone near {near} far {far}");
+    Check(far >= 0.35f - 1e-3f, $"cone floor {far}");
+});
+
+Test("stiff attitude controller commands the same rotation sense as the default one", () =>
+{
+    var car = new Car { Location = new Vec3(0, 0, 800), Forward = Vec3.X, Up = Vec3.Up };
+    var soft = new RLBot.Flat.ControllerStateT(); var stiff = new RLBot.Flat.ControllerStateT();
+    Vec3 fwd = ControlMath.Unit(new Vec3(1, 0.3f, 0.4f), Vec3.X);
+    ControlMath.Aim(car, soft, fwd, Vec3.Up);
+    ControlMath.AimStiff(car, stiff, fwd, Vec3.Up);
+    Check(MathF.Sign(soft.Pitch) == MathF.Sign(stiff.Pitch) && MathF.Sign(soft.Yaw) == MathF.Sign(stiff.Yaw), "sign mismatch");
+    Check(MathF.Abs(stiff.Pitch) >= MathF.Abs(soft.Pitch) - 1e-4f, "stiff controller weaker than default");
+});
+
 Console.WriteLine($"FREESTYLE RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
