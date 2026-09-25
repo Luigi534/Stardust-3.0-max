@@ -9,7 +9,8 @@ namespace Bot
     {
         public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
-        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") != "0";
+        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
+        public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLE") == "1";
         public bool AerialStrikes { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_STRIKE") != "0";
         public bool AerialBlocks { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_BLOCK") == "1";
         public bool Demolitions { get; init; } = Environment.GetEnvironmentVariable("STARDUST_DEMOS") != "0";
@@ -320,9 +321,15 @@ namespace Bot
                 return;
             }
 
-            if (Action is FlipResetPlay resetPlay && !resetPlay.Finished)
+            if (Action is FlipResetPlay resetPlay && !resetPlay.Finished && !(finishNow && resetPlay.Yieldable))
             {
                 SetDecision(resetPlay.Confirmed ? "mechanic / flip reset shot" : "mechanic / flip reset");
+                return;
+            }
+
+            if (Action is AirDribble dribble && !dribble.Finished)
+            {
+                SetDecision(dribble.Shooting ? "mechanic / air dribble shot" : "mechanic / air dribble");
                 return;
             }
 
@@ -397,6 +404,9 @@ namespace Bot
                 }
 
                 Shot aerial = priorityAttack;
+                // With no shot on, keep the ball up instead of dropping out of the play.
+                if (aerial == null && TryStartAirDribble())
+                    return;
                 Action = aerial ?? (IAction)new Recover();
                 SetDecision(aerial == null
                     ? "recover / landing surface"
@@ -579,6 +589,18 @@ namespace Bot
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
+
+        private bool TryStartAirDribble()
+        {
+            if (!Options.AirDribbles || !AirDribble.CanStart(Situation, Me, TheirGoal.Location))
+                return false;
+            AirDribble play = AirDribble.TryCreate(this);
+            if (play == null || HasTeammateEarlierShot(play.ClaimTime))
+                return false;
+            Action = play;
+            SetDecision(play.Shooting ? "mechanic / air dribble shot" : "mechanic / air dribble");
+            return true;
+        }
 
         private bool TryStartFlipReset()
         {

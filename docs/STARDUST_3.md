@@ -43,7 +43,12 @@ Set environment variables **before starting the bot process**:
 |---|---|---|
 | `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable the new catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
-| `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
+| `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable the experimental flip-reset play (`FlipResetPlay`) |
+| `STARDUST_AERIAL_STRIKE` | enabled | Set `0` to fall back to the legacy shot solvers for airborne cars |
+| `STARDUST_DEMOS` | enabled | Set `0` to disable planned demolitions and bumps |
+| `STARDUST_SPIDERMAN` | enabled | Set `0` to disable the back-wall "Spiderman" guard |
+| `STARDUST_AERIAL_BLOCK` | disabled | Set `1` to enable the experimental roof-face aerial block in emergencies |
+| `STARDUST_AIR_DRIBBLE` | disabled | Set `1` to enable the experimental chained keep-up air dribble |
 | `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |

@@ -28,6 +28,8 @@ namespace Bot
         private AerialPlan pending;
         private Drive approach;
         private readonly bool dodge;
+        private float closing = Closing;
+        private float through = ThroughDistance;
 
         private AerialStrike(BallSlice slice, Vec3 target, Vec3 push, bool dodge)
         {
@@ -44,6 +46,14 @@ namespace Bot
 
         /// <summary>Plan for one specific slice; null if unreachable.</summary>
         public static AerialStrike TryCreate(Car car, BallSlice slice, Vec3 target, bool dodge = true)
+            => TryCreate(car, slice, target, dodge, Closing, ThroughDistance);
+
+        /// <summary>
+        /// Plan for one slice with an explicit contact firmness: a low closing speed and no through-point
+        /// gives the soft, controlled touch an air dribble needs; the defaults give a firm shot.
+        /// </summary>
+        public static AerialStrike TryCreate(Car car, BallSlice slice, Vec3 target, bool dodge,
+            float closingSpeed, float throughDistance)
         {
             if (car == null || slice == null || slice.Location.z < 220f)
                 return null;
@@ -76,6 +86,8 @@ namespace Bot
                 AerialPlanner.ArrivalVelocity(car, contactPoint, tau), push, push);
             var strike = new AerialStrike(slice, target, push, dodge)
             {
+                closing = closingSpeed,
+                through = throughDistance,
                 Interruptible = car.IsGrounded,
                 PredictedOutgoing = outgoing,
                 AimError = MathF.Acos(System.Math.Clamp(ControlMath.Unit(outgoing, push)
@@ -103,7 +115,7 @@ namespace Bot
         {
             float tau = Slice.Time - Game.Time;
             Vec3 point = TargetLocation;
-            Vec3 velocity = Slice.Velocity + ShotDirection * Closing;
+            Vec3 velocity = Slice.Velocity + ShotDirection * closing;
             float single = AerialPlanner.Cost(car, point, velocity, tau, ContactFace.Nose, false, false);
             float dbl = car.IsGrounded && !car.HasDoubleJumped
                 ? AerialPlanner.Cost(car, point, velocity, tau, ContactFace.Nose, false, true) : -1f;
@@ -112,13 +124,13 @@ namespace Bot
             bool useDouble = dbl >= 0 && (single < 0 || dbl < single - 1f);
             return new AerialPlan
             {
-                ThroughDistance = ThroughDistance,
+                ThroughDistance = through,
                 Time = Slice.Time,
                 BallLocation = Slice.Location,
                 BallVelocity = Slice.Velocity,
                 Push = ShotDirection,
                 Face = ContactFace.Nose,
-                Closing = Closing,
+                Closing = closing,
                 DoubleJump = useDouble,
                 BoostCost = useDouble ? dbl : single,
             };

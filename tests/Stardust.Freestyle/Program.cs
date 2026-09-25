@@ -209,5 +209,19 @@ Test("spiderman: hang point is on our back wall, beyond the post or above the ba
     }
 });
 
+Test("air dribble: keep-up aim lifts the ball and carries it toward the attacked goal", () =>
+{
+    foreach (float gy in new[] { 5120f, -5120f })
+    {
+        foreach (Vec3 ball in new[] { new Vec3(0, 0, 600), new Vec3(-2500, 1500, 900), new Vec3(3000, -2000, 400) })
+        {
+            Vec3 goal = new Vec3(0, gy, 300);
+            Vec3 aim = AirDribble.KeepUpTarget(ball, goal) - ball;
+            Check(aim.z > 500f, $"keep-up aim {aim} does not lift the ball");
+            Check(aim.Flatten().Dot((goal - ball).Flatten()) > 0f, $"keep-up aim {aim} carries the ball away from goal");
+        }
+    }
+});
+
 Console.WriteLine($"FREESTYLE RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;

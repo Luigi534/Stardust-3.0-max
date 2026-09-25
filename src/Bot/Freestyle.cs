@@ -20,7 +20,9 @@ namespace Bot
         private enum Phase { Launch, Shadow, Commit, Follow, Shoot }
 
         public bool Finished { get; private set; }
-        public bool Interruptible => phase == Phase.Launch && !launched;
+        public bool Interruptible => (phase == Phase.Launch && !launched) || (phase == Phase.Shadow && !Confirmed);
+        /// <summary>Still only approaching the first reset: a direct scoring contact should take over.</summary>
+        public bool Yieldable => phase == Phase.Shadow && !Confirmed;
         public float ClaimTime => Game.Time + 0.3f;
         public int Resets { get; private set; }
         public bool Confirmed => Resets > 0;
@@ -219,7 +221,7 @@ namespace Bot
         /// <paramref name="closing"/> uu/s toward it. The horizon adapts so the demand stays within ~80% of
         /// available thrust; otherwise each burst swings the demand faster than the car can rotate onto it.
         /// </summary>
-        private void Shadow(RUBot bot, Car car, Vec3 push, float offset = HoldDistance, float closing = 0f)
+        internal static void Shadow(RUBot bot, Car car, Vec3 push, float offset = HoldDistance, float closing = 0f)
         {
             Vec3 demand = Vec3.Zero;
             foreach (float tau in ShadowHorizons)
@@ -286,6 +288,173 @@ namespace Bot
             phase = next;
             phaseStart = Game.Time;
             convergedSince = float.NaN;
+        }
+    }
+    /// <summary>
+    /// Bouncy air dribble: after our own airborne touch, keep the ball in the air with a chain of soft
+    /// nose touches that each lift it and carry it goalward, following on boost, and convert with a firm
+    /// strike once a goal-directed contact is modelled on target. Each touch is an ordinary
+    /// <see cref="AerialStrike"/> planned from the live prediction; nothing about the chain is scripted.
+    /// </summary>
+    public sealed class AirDribble : IPossessionAction
+    {
+        public bool Finished { get; private set; }
+        public bool Interruptible => strike == null || !strike.Launched;
+        public float ClaimTime => strike?.Slice?.Time ?? Game.Time + 0.3f;
+        public int Touches { get; private set; }
+        public bool Shooting { get; private set; }
+
+        public const float SoftClosing = 350f;
+        public const int MaxTouches = 6;
+        /// <summary>Upward ball speed a keep-up touch must leave: enough for the car to follow and re-touch.</summary>
+        public const float MinLift = 350f;
+        /// <summary>
+        /// Keep-up touches come from underneath (contact normal this steep): the car then arrives nose-up and
+        /// can keep boosting after the ball instead of rotating a quarter turn while it falls away.
+        /// </summary>
+        public const float MinUnderside = 0.5f;
+
+        /// <summary>Longest shadow flight between touches before handing back.</summary>
+        public const float MaxFollow = 1.2f;
+
+        private AerialStrike strike;
+        private readonly float started = Game.Time;
+        private float followSince = Game.Time, nextPlan;
+
+        /// <summary>
+        /// Worth keeping the ball up: our car is airborne with fuel near a lofted ball that no opponent can
+        /// contest soon, and the ball is not in our defensive third.
+        /// </summary>
+        public static bool CanStart(TacticalFrame frame, Car car, Vec3 attackGoal)
+        {
+            if (frame == null || car == null || car.IsGrounded || car.Boost < 30f)
+                return false;
+            if (Ball.Location.z < 350f || frame.OpponentEta < 1.1f)
+                return false;
+            float attackSide = attackGoal.y > 0 ? 1f : -1f;
+            if (Ball.Location.y * attackSide < -2500f)
+                return false;
+            return car.Location.Dist(Ball.Location) < 1400f;
+        }
+
+        public static AirDribble TryCreate(RUBot bot)
+        {
+            var play = new AirDribble();
+            return play.Plan(bot) ? play : null;
+        }
+        /// <summary>Where a keep-up touch should send the ball: up, and toward the goal we attack.</summary>
+        public static Vec3 KeepUpTarget(Vec3 ball, Vec3 attackGoal)
+        {
+            Vec3 toGoal = ControlMath.FlatUnit(attackGoal - ball, Vec3.Up);
+            return ball + toGoal * 1200f + Vec3.Up * 1200f;
+        }
+
+        /// <summary>Choose the next contact: a firm on-target finish if one exists, else a soft keep-up.</summary>
+        private bool Plan(RUBot bot)
+        {
+            Car car = bot.Me;
+            Vec3 goal = bot.TheirGoal.Location + new Vec3(0, 0, 250);
+            bool inRange = Ball.Location.Dist(goal) < 4200f;
+            AerialStrike keepUp = null;
+            foreach (BallSlice slice in Ball.Prediction.Slices)
+            {
+                if (slice == null || slice.Time < Game.Time + 0.15f)
+                    continue;
+                if (slice.Time > Game.Time + 1.6f)
+                    break;
+                if (inRange && bot.Jump.CanDodge)
+                {
+                    AerialStrike shot = AerialStrike.TryCreate(car, slice, goal, dodge: true);
+                    if (shot != null && shot.AimError < 0.5f)
+                    {
+                        strike = shot;
+                        Shooting = true;
+                        return true;
+                    }
+                }
+                if (keepUp == null && slice.Location.z > 400f)
+                {
+                    AerialStrike touch = AerialStrike.TryCreate(car, slice,
+                        KeepUpTarget(slice.Location, bot.TheirGoal.Location), false, SoftClosing, 0f);
+                    if (touch != null && touch.AimError < 0.6f && touch.PredictedOutgoing.z > MinLift &&
+                        touch.ShotDirection.z > MinUnderside)
+                        keepUp = touch;
+                }
+            }
+            strike = keepUp;
+            Shooting = false;
+            return strike != null;
+        }
+
+        public void Run(RUBot bot)
+        {
+            Car car = bot.Me;
+            if (Game.Time - started > 7f || (car.IsGrounded && strike?.Launched != true))
+            {
+                Finished = true;
+                return;
+            }
+            if (strike != null && !strike.Finished)
+            {
+                strike.Run(bot);
+                return;
+            }
+            if (strike != null)
+            {
+                if (Shooting)
+                {
+                    Finished = true;
+                    return;
+                }
+                Touches++;
+                strike = null;
+                followSince = Game.Time;
+            }
+            if (Touches >= MaxTouches || car.Boost < 10f || Ball.Location.z < 300f ||
+                Game.Time - followSince > MaxFollow)
+            {
+                Finished = true;
+                return;
+            }
+            // Between touches: replan a few times a second, and meanwhile shadow the ball from below-behind
+            // along the keep-up direction so the next soft touch stays reachable.
+            if (Game.Time >= nextPlan)
+            {
+                nextPlan = Game.Time + 0.05f;
+                if (Plan(bot))
+                {
+                    strike.Run(bot);
+                    return;
+                }
+            }
+            Follow(bot, car);
+        }
+
+        private static readonly float[] FollowHorizons = { 0.6f, 0.8f, 1f, 1.3f, 1.6f };
+
+        /// <summary>
+        /// Fly to a point under-behind the ball's future position (along the keep-up direction), matching
+        /// its velocity, with the roof kept as close to its current attitude as the nose allows.
+        /// </summary>
+        private static void Follow(RUBot bot, Car car)
+        {
+            Vec3 demand = Vec3.Zero;
+            foreach (float tau in FollowHorizons)
+            {
+                Ball target = Ball.Prediction.TrySample(Game.Time + tau, out Ball sample)
+                    ? sample : Ball.MainBall.Predict(tau);
+                Vec3 push = ControlMath.Unit(KeepUpTarget(target.location, bot.TheirGoal.Location) - target.location, Vec3.Up);
+                Vec3 hold = target.location - push * 240f;
+                demand = AerialContact.Guidance(car.Location, car.Velocity, hold, target.velocity, tau, Game.Gravity, 0.5f);
+                if (demand.Length() < 900f)
+                    break;
+            }
+            Vec3 nose = ControlMath.Unit(demand, car.Forward);
+            Vec3 roof = ControlMath.Unit(car.Up - nose * car.Up.Dot(nose), Vec3.Up);
+            ControlMath.Aim(car, bot.Controller, nose, roof);
+            bot.Controller.Boost = car.Boost > 0f && demand.Length() > 250f && car.Forward.Dot(nose) > 0.7f;
+            bot.Controller.Throttle = ControlRuntime.Axis(demand.Dot(car.Forward) / Car.AirThrottleAccel);
+            bot.Controller.Jump = false;
         }
     }
 }
