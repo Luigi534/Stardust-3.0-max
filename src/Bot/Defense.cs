@@ -389,20 +389,23 @@ namespace Bot
                 // geometry which can turn a "clear" into an own-goal acceleration.
                 if (!IsGoalSide(car.Location, slice.Location, goal, -100f))
                     continue;
+                // Contact must come from the goal side of the ball, and the route must not clip it first.
+                if (!SafeContactTarget(car, slice.Location, goal, out Vec3 contact))
+                    continue;
 
-                float routeEta = Drive.GetEta(car, slice.Location);
-                Vec3 toSlice = ControlMath.FlatUnit(slice.Location - car.Location, car.Forward);
+                float routeEta = Drive.GetEta(car, contact);
+                Vec3 toSlice = ControlMath.FlatUnit(contact - car.Location, car.Forward);
                 float heading = car.Forward.FlatNorm().Dot(toSlice);
                 float forward = MathF.Max(0f, car.Velocity.Dot(toSlice));
                 float directEta = heading > 0.72f
                     ? DrivePhysics.TravelTime(
-                        car.Location.FlatDist(slice.Location), forward, car.Boost)
+                        car.Location.FlatDist(contact), forward, car.Boost)
                     : float.PositiveInfinity;
                 float eta = MathF.Min(routeEta, directEta + 0.08f);
                 if (!float.IsFinite(eta) || eta > time + 0.14f)
                     continue;
 
-                target = Field.LimitToNearestSurface(slice.Location);
+                target = Field.LimitToNearestSurface(contact);
                 return ControlMath.Finite(target);
             }
 
@@ -591,6 +594,53 @@ namespace Bot
             }
 
             return float.PositiveInfinity;
+        }
+
+        /// <summary>Point deep in the net used as the "behind the ball" reference for goal-side contact.</summary>
+        public static Vec3 NetAnchor(Vec3 goal) => new(goal.x, goal.y + Side(goal) * 880f, 17f);
+
+        /// <summary>
+        /// Ground contact point that is goal-side of the ball: the car centre sits between the ball and the
+        /// back of the net, so the contact normal points away from our goal. Returns false when the drive
+        /// there would reach the ball first from the field side (the own-goal geometry).
+        /// </summary>
+        public static bool SafeContactTarget(Car car, Vec3 ball, Vec3 goal, out Vec3 target)
+        {
+            Vec3 away = ControlMath.FlatUnit(ball - NetAnchor(goal), new Vec3(0, -Side(goal), 0));
+            target = new Vec3(ball.x, ball.y, 17f) - away * 120f;
+            if (car == null || !ControlMath.Finite(car.Location))
+                return false;
+            // Already goal-side: any contact pushes the ball out.
+            float carProgress = car.Location.Dot(away), ballProgress = ball.Dot(away);
+            if (carProgress < ballProgress - 60f)
+                return true;
+            // Otherwise the straight route must clear the ball.
+            Vec3 a = car.Location.Flatten(), b = target.Flatten(), p = ball.Flatten();
+            Vec3 ab = b - a;
+            float t = ab.Length() < 1f ? 0f : System.Math.Clamp((p - a).Dot(ab) / ab.Dot(ab), 0f, 1f);
+            return (a + ab * t).Dist(p) > 170f;
+        }
+
+        /// <summary>
+        /// Goal-line position against a ball already near the line: between the ball and the back of the net,
+        /// never on the field side of it (a ball trickling along the line or off a post must not be knocked in).
+        /// Far from the line this is the usual crossing-point target.
+        /// </summary>
+        public static Vec3 EmergencyTarget(Vec3 crossing, Vec3 goal, Vec3 ball)
+        {
+            Vec3 line = EmergencyTarget(crossing, goal);
+            float side = Side(goal);
+            float depth = ball.y * side, lineDepth = MathF.Abs(goal.y);
+            if (depth < lineDepth - 700f || ball.z > 400f)
+                return line;
+            Vec3 anchor = NetAnchor(goal);
+            Vec3 behind = new Vec3(ball.x, ball.y, 17f) + ControlMath.FlatUnit(anchor - ball, new Vec3(0, side, 0)) * 170f;
+            float half = Goal.Width * 0.5f - 130f;
+            behind = new Vec3(System.Math.Clamp(behind.x, goal.x - half, goal.x + half),
+                side * System.Math.Clamp(behind.y * side, lineDepth - 120f, lineDepth + 260f), 17f);
+            // Blend from the line target to the behind-the-ball target as the ball nears the line.
+            float blend = System.Math.Clamp((depth - (lineDepth - 700f)) / 450f, 0f, 1f);
+            return line + (behind - line) * blend;
         }
 
         public static Vec3 EmergencyTarget(Vec3 crossing, Vec3 goal)

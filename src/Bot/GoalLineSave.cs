@@ -53,7 +53,18 @@ namespace Bot
                 return;
             }
 
-            GuardTarget = Defense.EmergencyTarget(Crossing, bot.OurGoal.Location);
+            GuardTarget = Defense.EmergencyTarget(Crossing, bot.OurGoal.Location, Ball.Location);
+            // If the straight route to the guard point would clip the ball from the field side, go around
+            // it on the side the car is already on.
+            bool nearLowBall = car.IsGrounded && car.Location.FlatDist(Ball.Location) <= 900f && Ball.Location.z <= 250f;
+            if (nearLowBall && !Defense.SafeContactTarget(car, Ball.Location, bot.OurGoal.Location, out _))
+            {
+                Vec3 away = ControlMath.FlatUnit(Ball.Location - Defense.NetAnchor(bot.OurGoal.Location), Vec3.Y);
+                Vec3 lateral = new Vec3(-away.y, away.x, 0);
+                if (lateral.Dot(car.Location - Ball.Location) < 0f)
+                    lateral = -lateral;
+                GuardTarget = new Vec3(Ball.Location.x, Ball.Location.y, 17f) + lateral * 280f - away * 120f;
+            }
 
             if (!jumping)
             {

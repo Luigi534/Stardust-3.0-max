@@ -118,7 +118,7 @@ namespace Bot
         }
     }
 
-    /// <summary>Confirms a newly acquired reset only after spent-flip state and a recent own wheel contact.</summary>
+    /// <summary>Confirms a newly acquired reset only after a consumed jump and a recent own wheel contact.</summary>
     public sealed class ResetEvidence
     {
         private bool spent;
@@ -126,10 +126,20 @@ namespace Bot
         public bool Confirmed { get; private set; }
         public bool Observe(JumpState state, bool ownTouch, bool wheelsAligned, float height, float now)
         {
-            spent |= state.DoubleJumped || state.Dodged;
+            // Any consumed jump counts: a reset during the first-jump window still converts a timed flip
+            // into an unlimited one, and the packet shows it as the jump flag clearing in the air.
+            spent |= state.Jumped || state.DoubleJumped || state.Dodged;
             if (spent && ownTouch && wheelsAligned && height > 250) contact = now;
             if (spent && state.HasReset && height > 250 && now >= contact && now - contact <= 0.2f) Confirmed = true;
             return Confirmed;
+        }
+
+        /// <summary>Start watching for the next reset (chained resets).</summary>
+        public void Reset()
+        {
+            spent = false;
+            contact = float.NegativeInfinity;
+            Confirmed = false;
         }
     }
 }

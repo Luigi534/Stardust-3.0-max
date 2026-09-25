@@ -9,7 +9,11 @@ namespace Bot
     {
         public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
-        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
+        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") != "0";
+        public bool AerialStrikes { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_STRIKE") != "0";
+        public bool AerialBlocks { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_BLOCK") == "1";
+        public bool Demolitions { get; init; } = Environment.GetEnvironmentVariable("STARDUST_DEMOS") != "0";
+        public bool WallGuard { get; init; } = Environment.GetEnvironmentVariable("STARDUST_SPIDERMAN") != "0";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
         public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
         public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
@@ -158,6 +162,13 @@ namespace Bot
             ChallengeCommitted = RawCanChallenge ||
                 (Game.Time < challengeCommitUntil && challengeSafe);
 
+            // Spiderman defence owns the car while it hangs on the back wall or is releasing into a save.
+            if (Action is WallGuard spider && !spider.Finished && (spider.OnWall || spider.Released))
+            {
+                SetDecision(spider.Released ? "defend / spiderman release" : "defend / spiderman");
+                return;
+            }
+
             if (emergency || counterDanger)
             {
                 float dangerTime = emergency ? threat : counterThreat;
@@ -188,6 +199,13 @@ namespace Bot
                     }
                 }
 
+                // An airborne block already under way owns the car until it resolves.
+                if (Action is AerialSave activeSave && !activeSave.Finished)
+                {
+                    SetDecision("defend / aerial block");
+                    return;
+                }
+
                 // A formal clear is only legal from approximately goal-side geometry. The uploaded
                 // match contained a probable own-goal acceleration from a wrong-side recovery dodge.
                 if (clearSide)
@@ -204,6 +222,26 @@ namespace Bot
                 {
                     Action = null;
                     defensiveShot = null;
+                }
+
+                // A clear that meets the ball late (or no clear at all) loses to an airborne block that
+                // gets the car's body into the ball's path earlier.
+                if (Options.AerialBlocks && emergency && (Ball.Location.z > 150f || crossing.z > 200f))
+                {
+                    AerialSave airBlock = AerialSave.TryCreate(Me, OurGoal.Location, deadline);
+                    // Jump/double-jump clears use optimistic legacy reachability checks against airborne
+                    // balls; the block's reachability is modelled. Only a clearly earlier ground shot or
+                    // committed aerial strike keeps priority.
+                    bool reliableClear = Action is GroundShot || Action is AerialStrike;
+                    float clearTime = Action is Shot clear && clear.Slice != null
+                        ? clear.Slice.Time : float.PositiveInfinity;
+                    if (airBlock != null && (!reliableClear || airBlock.Plan.Time < clearTime - 0.12f))
+                    {
+                        Action = airBlock;
+                        defensiveShot = null;
+                        SetDecision("defend / aerial block");
+                        return;
+                    }
                 }
 
                 if (Action != null && !(Action is GoalLineSave))
@@ -276,6 +314,18 @@ namespace Bot
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
 
+            if (Action is Demolish hit && !hit.Finished)
+            {
+                SetDecision("mechanic / " + (hit.Plan.Demolition ? "demo " : "bump ") + hit.Plan.Reason);
+                return;
+            }
+
+            if (Action is FlipResetPlay resetPlay && !resetPlay.Finished)
+            {
+                SetDecision(resetPlay.Confirmed ? "mechanic / flip reset shot" : "mechanic / flip reset");
+                return;
+            }
+
             if (Action is IPossessionAction possession)
             {
                 if (finishNow)
@@ -319,7 +369,7 @@ namespace Bot
                     Action = null;
             }
 
-            if (!(Action is Drive) && !(Action is DefensiveDrive))
+            if (!(Action is Drive) && !(Action is DefensiveDrive) && !(Action is Demolish) && !(Action is WallGuard))
                 Action = null;
 
             if (!Me.IsGrounded)
@@ -330,6 +380,9 @@ namespace Bot
                     SetDecision("attack / airborne finish");
                     return;
                 }
+
+                if (TryStartFlipReset())
+                    return;
 
                 bool canPossessAir = Options.AerialCarry &&
                     PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
@@ -365,6 +418,9 @@ namespace Bot
                 SetDecision("attack / finish now");
                 return;
             }
+
+            if (TryStartFlipReset())
+                return;
 
             if (controlledPossession && canDribble)
             {
@@ -417,6 +473,13 @@ namespace Bot
                 return;
             }
 
+            if (Options.Demolitions && Demolitions.Choose(this, Situation, false) is HitPlan hitPlan)
+            {
+                Action = new Demolish(Me, hitPlan);
+                SetDecision("mechanic / " + (hitPlan.Demolition ? "demo " : "bump ") + hitPlan.Reason);
+                return;
+            }
+
             if (canChallenge)
             {
                 if (underPressure || Situation.FreeTime < 0.35f)
@@ -459,6 +522,15 @@ namespace Bot
                 Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) &&
                 TryBoostDetour(support))
                 return;
+
+            if (Options.WallGuard && !recoveringGoalSide && !exitingGoal &&
+                global::Bot.WallGuard.Worthwhile(Situation, Me, OurGoal.Location, EmergencyThreatTime, LivingOpponents))
+            {
+                if (!(Action is WallGuard guard) || guard.Finished)
+                    Action = new WallGuard(Me, Team);
+                SetDecision("defend / spiderman");
+                return;
+            }
 
             float cruise;
             float terminal;
@@ -507,6 +579,19 @@ namespace Bot
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
+
+        private bool TryStartFlipReset()
+        {
+            if (!Options.FlipResets || !FlipResetPlay.Worthwhile(
+                    Situation, Me, Ball.MainBall, OurGoal.Location, EmergencyThreatTime))
+                return false;
+            FlipResetPlay play = FlipResetPlay.TryCreate(this);
+            if (play == null || HasTeammateEarlierShot(play.ClaimTime))
+                return false;
+            Action = play;
+            SetDecision("mechanic / flip reset");
+            return true;
+        }
 
         private bool TryBoostDetour(Vec3 destination)
         {

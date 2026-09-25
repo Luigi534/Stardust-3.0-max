@@ -8,23 +8,23 @@ namespace RedUtils
 	public class JumpShot : Shot
 	{
 		/// <summary>Whether or not this shot has finished</summary>
-		public override bool Finished { get; internal set; }
+		public override bool Finished { get; protected internal set; }
 		/// <summary>Whether or not this shot can be interrupted</summary>
-		public override bool Interruptible { get; internal set; }
+		public override bool Interruptible { get; protected internal set; }
 
 		/// <summary>The future ball state at which time we are planning to hit the shot</summary>
-		public override BallSlice Slice { get; internal set; }
+		public override BallSlice Slice { get; protected internal set; }
 		/// <summary>The exact position we will hit the ball towards</summary>
-		public override Vec3 ShotTarget { get; internal set; }
+		public override Vec3 ShotTarget { get; protected internal set; }
 		/// <summary>The final position of the car at the point of collision</summary>
-		public override Vec3 TargetLocation { get; internal set; }
+		public override Vec3 TargetLocation { get; protected internal set; }
 		/// <summary>The direction from the car to the ball at the point of collision</summary>
-		public override Vec3 ShotDirection { get; internal set; }
+		public override Vec3 ShotDirection { get; protected internal set; }
 
 		/// <summary>The direction the car should be facing right before dodging</summary>
-		public Vec3 DodgeDirection { get; internal set; }
+		public Vec3 DodgeDirection { get; protected internal set; }
 		/// <summary>This shot's arrive sub action, which will take us to the ball</summary>
-		public Arrive ArriveAction { get; internal set; }
+		public Arrive ArriveAction { get; protected internal set; }
 
 		/// <summary>The amount of boost we have when starting this action</summary>
 		private readonly float _startBoostAmount = 0;

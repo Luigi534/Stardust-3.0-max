@@ -7,25 +7,25 @@ namespace RedUtils
 	public class AerialShot : Shot
 	{
 		/// <summary>Whether or not this aerial has finished</summary>
-		public override bool Finished { get; internal set; }
+		public override bool Finished { get; protected internal set; }
 		/// <summary>Whether or not this aerial can be interrupted</summary>
-		public override bool Interruptible { get; internal set; }
+		public override bool Interruptible { get; protected internal set; }
 
 		/// <summary>The future ball state at which time we are planning to hit the aerial</summary>
-		public override BallSlice Slice { get; internal set; }
+		public override BallSlice Slice { get; protected internal set; }
 		/// <summary>The exact position we will hit the ball towards</summary>
-		public override Vec3 ShotTarget { get; internal set; }
+		public override Vec3 ShotTarget { get; protected internal set; }
 		/// <summary>The final position of the car at the point of collision</summary>
-		public override Vec3 TargetLocation { get; internal set; }
+		public override Vec3 TargetLocation { get; protected internal set; }
 		/// <summary>The direction from the car to the ball at the point of collision</summary>
-		public override Vec3 ShotDirection { get; internal set; }
+		public override Vec3 ShotDirection { get; protected internal set; }
 
 		/// <summary>The location to drive to</summary>
-		public Vec3 DriveLocation { get; internal set; }
+		public Vec3 DriveLocation { get; protected internal set; }
 		/// <summary>The drive sub action</summary>
-		public Drive DriveAction { get; internal set; }
+		public Drive DriveAction { get; protected internal set; }
 		/// <summary>Whether or not we are going to do a double jump aerial</summary>
-		public bool DoubleJumping { get; internal set; }
+		public bool DoubleJumping { get; protected internal set; }
 
 		/// <summary>Whether or not we should jump immediatly or turn and then jump</summary>
 		private readonly bool _jumpImmediatly = false;

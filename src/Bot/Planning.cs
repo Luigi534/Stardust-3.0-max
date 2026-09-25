@@ -329,6 +329,21 @@ namespace Bot
         }
 
         /// <summary>
+        /// An aerial is worth taking only if its modelled outcome helps: a clear must not send the ball
+        /// toward our own goal, and an attacking touch must roughly head for the target.
+        /// </summary>
+        public static bool UsefulAerial(RUBot bot, AerialStrike aerial, bool emergency)
+        {
+            Vec3 outgoing = ControlMath.Unit(aerial.PredictedOutgoing, aerial.ShotDirection);
+            if (emergency)
+            {
+                Vec3 towardOwnGoal = ControlMath.Unit(bot.OurGoal.Location - aerial.Slice.Location, Vec3.Up);
+                return outgoing.Dot(towardOwnGoal) < 0.3f;
+            }
+            return aerial.AimError < 0.9f;
+        }
+
+        /// <summary>
         /// Bounded shot search with an optional hard contact deadline. Emergency defense must not
         /// select a nominally valid contact that occurs after the ball has already crossed the line.
         /// </summary>
@@ -373,6 +388,23 @@ namespace Bot
                 if (!ControlMath.Finite(destination))
                     continue;
 
+                bool strikes = bot is not Stardust stardust || stardust.Options.AerialStrikes;
+                // Ground mechanics cannot be executed from the air; airborne cars only consider aerials.
+                if (strikes && !bot.Me.IsGrounded)
+                {
+                    AerialStrike aerial = AerialStrike.TryCreate(bot.Me, slice, destination);
+                    if (aerial == null || !UsefulAerial(bot, aerial, emergency))
+                        continue;
+                    float airScore = -t - aerial.AimError * 0.6f -
+                        MathF.Max(0f, t - opponentEta) * (emergency ? 0f : 2f);
+                    if (airScore > bestScore)
+                    {
+                        best = aerial;
+                        bestScore = airScore;
+                    }
+                    break;
+                }
+
                 Shot candidate = new GroundShot(bot.Me, slice, destination);
                 float cost = 0f;
                 if (!candidate.IsValid(bot.Me))
@@ -385,12 +417,14 @@ namespace Bot
                     candidate = new DoubleJumpShot(bot.Me, slice, destination);
                     cost = 0.4f;
                 }
+                // From the floor the legacy aerial (turn, drive, then jump when its boost model allows)
+                // measured at least as well as AerialStrike in paired scenarios, so it stays the ground choice.
                 if (!candidate.IsValid(bot.Me))
                 {
                     candidate = new AerialShot(bot.Me, slice, destination);
                     cost = 0.8f;
                 }
-                if (!candidate.IsValid(bot.Me))
+                if (candidate == null || !candidate.IsValid(bot.Me))
                     continue;
 
                 float score = -t - cost -

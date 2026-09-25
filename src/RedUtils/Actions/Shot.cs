@@ -5,12 +5,12 @@ namespace RedUtils
 {
     public abstract class Shot : IAction
     {
-        public abstract bool Finished { get; internal set; }
-        public abstract bool Interruptible { get; internal set; }
-        public abstract BallSlice Slice { get; internal set; }
-        public abstract Vec3 ShotTarget { get; internal set; }
-        public abstract Vec3 TargetLocation { get; internal set; }
-        public abstract Vec3 ShotDirection { get; internal set; }
+        public abstract bool Finished { get; protected internal set; }
+        public abstract bool Interruptible { get; protected internal set; }
+        public abstract BallSlice Slice { get; protected internal set; }
+        public abstract Vec3 ShotTarget { get; protected internal set; }
+        public abstract Vec3 TargetLocation { get; protected internal set; }
+        public abstract Vec3 ShotDirection { get; protected internal set; }
         public abstract bool IsValid(Car car);
 
         /// <summary>Reject expired, missing, or diverged predictions before executing a stale shot.</summary>
