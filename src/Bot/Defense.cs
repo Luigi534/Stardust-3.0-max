@@ -162,7 +162,7 @@ namespace Bot
                 default:
                     // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
                     desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
+                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f) * ShadowScale;
                     minimumProgress = 460f - 120f * urgency;
                     lateralBias = 260f;
                     break;
@@ -325,8 +325,16 @@ namespace Bot
             if (frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 requiredMargin += 0.04f;
 
-            return frame.FreeTime >= requiredMargin;
+            return frame.FreeTime >= requiredMargin - ChallengeBias;
         }
+
+        /// <summary>Scale on the solo shadow gap (lab tuning knob; 1 = original).</summary>
+        public static float ShadowScale = float.TryParse(Environment.GetEnvironmentVariable("STARDUST_SHADOW_SCALE"),
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float scale) ? scale : 1f;
+
+        /// <summary>Extra aggression in the challenge race gate (seconds of ETA deficit tolerated).</summary>
+        public static float ChallengeBias = float.TryParse(Environment.GetEnvironmentVariable("STARDUST_CHALLENGE_BIAS"),
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float bias) ? bias : 0f;
 
         /// <summary>
         /// A dribbling opponent always "wins" the race to the ball, so a race-based gate never challenges it and the
