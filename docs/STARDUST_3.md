@@ -109,6 +109,20 @@ A useful curriculum is: controlled contact -> sustained moving carry -> target-d
 
 Use RLGym/RocketSim [2] for experience generation, and consider reward-shaping/auxiliary-task ideas from [3]. Export only a policy that has passed the held-out skill and game-transfer checks [4]. Version its observation normalization, action semantics, action-repeat rate, and recurrent-state reset behavior with its weights. Keep controls bounded and inference failure recoverable.
 
+## Mechanical upgrade branch: measured results
+
+Measured in a headless RocketSim harness (not in Rocket League), 180 s matches, seeded and side-swapped. Score = 100 x (0.25 x S_Daizen + 0.75 x S_previous), where S is this build's goal share. `???` = not measured.
+
+| Measure | Previous bot (34412f4) | This branch (default switches) |
+|---|---|---|
+| vs Daizen, 32 matches (1v1+2v2) | 9-376, share 0.023, 0 wins | 14-367, share 0.037 (95% CI 0.016-0.063), 0 wins |
+| vs previous bot, 48 held-out matches (1v1/2v2/3v3) | 0.5 by definition | share 0.495 (95% CI 0.442-0.548), W/D/L 18/9/21 |
+| Benchmark score | 38.1 | 38.05 (no measurable change) |
+| Own goals vs previous bot (earlier 48-match run) | 34 | 24 |
+| Real Rocket League match strength | ??? | ??? |
+
+Scenario checks (paired seeds, idle or Daizen opponent): Spiderman corner attack 29/60 vs 27/60, goal defense 27/60 vs 27/60; flip-reset acquisition 2/40 vs 1/40 (experimental, off by default); air dribble 11/40 vs 18/40 when enabled (experimental, off by default); forced airborne strikes 10/10 on-time contacts, ground-launched 14/24 (ground aerials still use the legacy solver). The branch works mechanically but has **not** been shown to make the bot stronger.
+
 ## Known limitations
 
 No in-game match series, RocketSim contact rollout, GPU training, professional-player comparison, or measured multiplier is available from this change. Contact offsets and gains are heuristics requiring hitbox-specific tuning. The reset routine is an experimental acquisition/follow-through attempt, not a guarantee of advanced freestyle chains. Wall/ceiling setups, doubles, musty flicks, and learned opponent modeling are not newly implemented. The new tactical dimensions assume standard Soccar, and opponent ETA is a ground-race heuristic rather than a full opponent aerial predictor. Existing static RedUtils world data is serialized across bot instances, but broader multi-match/process isolation remains a separate architectural task.
